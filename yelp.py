@@ -11,6 +11,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 def get_driver():
     chrome_options = Options()
+    # Run in headful mode for debugging
+    # chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     
@@ -25,46 +27,24 @@ def scrape_phone_number(driver, url):
         driver.get(url)
         
         # Wait for the contact section to load
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "section.y-css-1790tv2"))
-            )
-            
-            # First find the phone icon element
-            phone_icon = driver.find_element(
-                By.CSS_SELECTOR,
-                "svg[aria-label='Business phone number']"
-            )
-            
-            # Then navigate to the phone number element
-            phone_element = phone_icon.find_element(
-                By.XPATH,
-                "./ancestor::div[contains(@class, 'css-')]/following-sibling::div//p[contains(@class, 'y-css-qn4gww')]"
-            )
-            
-            if phone_element:
-                return phone_element.text.strip()
-            
-        except Exception as e:
-            print(f"Couldn't find phone number in expected format: {str(e)}")
-            
-            # Fallback: Try direct CSS selector
-            try:
-                phone_element = driver.find_element(
-                    By.CSS_SELECTOR,
-                    "section.y-css-1790tv2 div.y-css-4cg16w:nth-of-type(2) p.y-css-qn4gww[data-font-weight='semibold']"
-                )
-                if phone_element:
-                    return phone_element.text.strip()
-            except:
-                pass
-            
-            return "N/A"
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "section.y-css-1790tv2"))
+        )
+        
+        # Use the working CSS selector directly
+        phone_element = driver.find_element(
+            By.CSS_SELECTOR,
+            "section.y-css-1790tv2 div.y-css-4cg16w:nth-of-type(2) p.y-css-qn4gww[data-font-weight='semibold']"
+        )
+        
+        if phone_element:
+            return phone_element.text.strip()
+        
+        return "N/A"
         
     except Exception as e:
         print(f"Error loading page {url}: {str(e)}")
         return "N/A"
-
 def process_csv(input_file, output_file):
     # Check if input file exists
     import os
@@ -139,6 +119,7 @@ if __name__ == "__main__":
         print("Installing required packages...")
         import subprocess
         subprocess.check_call([sys.executable, "-m", "pip", "install", "selenium", "webdriver-manager"])
+        # Import again after installation
         from selenium import webdriver
     
     process_csv(input_csv, output_csv)
