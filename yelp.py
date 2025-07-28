@@ -31,15 +31,27 @@ def scrape_phone_number(driver, url):
             EC.presence_of_element_located((By.CSS_SELECTOR, "section.y-css-1790tv2"))
         )
         
-        # Use the working CSS selector directly
-        phone_element = driver.find_element(
-            By.CSS_SELECTOR,
-            "section.y-css-1790tv2 div.y-css-4cg16w:nth-of-type(2) p.y-css-qn4gww[data-font-weight='semibold']"
-        )
+        # Define multiple selectors to try in order
+        selectors = [
+            "section.y-css-1790tv2 div.y-css-4cg16w:nth-of-type(2) p.y-css-qn4gww[data-font-weight='semibold']",
+            "section.y-css-1790tv2 div.y-css-4cg16w:nth-of-type(1) p.y-css-qn4gww[data-font-weight='semibold']", 
+            "section.y-css-1790tv2 div.y-css-4cg16w:nth-of-type(3) p.y-css-qn4gww[data-font-weight='semibold']"
+        ]
         
-        if phone_element:
-            return phone_element.text.strip()
+        # Try each selector
+        for selector in selectors:
+            try:
+                phone_element = driver.find_element(By.CSS_SELECTOR, selector)
+                if phone_element:
+                    phone_text = phone_element.text.strip()
+                    # Validate it's actually a phone number (contains digits and common phone characters)
+                    if phone_text and any(char.isdigit() for char in phone_text) and ('(' in phone_text or '-' in phone_text or len([c for c in phone_text if c.isdigit()]) >= 10):
+                        print(f"Found phone number with selector: {selector}")
+                        return phone_text
+            except:
+                continue
         
+        print("No phone number found in any of the expected locations")
         return "N/A"
         
     except Exception as e:
