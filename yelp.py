@@ -11,8 +11,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 def get_driver():
     chrome_options = Options()
-    # Run in headful mode for debugging
-    # chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     
@@ -66,6 +64,7 @@ def scrape_phone_number(driver, url):
     except Exception as e:
         print(f"Error loading page {url}: {str(e)}")
         return "N/A"
+
 def process_csv(input_file, output_file):
     # Check if input file exists
     import os
@@ -106,12 +105,6 @@ def process_csv(input_file, output_file):
                     row['phone'] = phone if phone else "N/A"
                     print(f"Found phone: {row['phone']}")
                     
-                    # Take screenshot for debugging
-                    try:
-                        driver.save_screenshot(f"debug_{time.time()}.png")
-                    except Exception as e:
-                        print(f"Could not save screenshot: {e}")
-                    
                     delay = random.uniform(5, 15)
                     print(f"Waiting {delay:.1f} seconds...")
                     time.sleep(delay)
@@ -146,7 +139,6 @@ if __name__ == "__main__":
         print("Installing required packages...")
         import subprocess
         subprocess.check_call([sys.executable, "-m", "pip", "install", "selenium", "webdriver-manager"])
-        # Import again after installation
         from selenium import webdriver
     
     process_csv(input_csv, output_csv)
