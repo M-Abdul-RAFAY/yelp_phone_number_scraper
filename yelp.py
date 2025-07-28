@@ -97,7 +97,7 @@ def process_csv(input_file, output_file):
                     row['phone'] = phone if phone else "N/A"
                     print(f"Found phone: {row['phone']}")
                     
-                    delay = random.uniform(5, 15)
+                    delay = random.uniform(1, 3)
                     print(f"Waiting {delay:.1f} seconds...")
                     time.sleep(delay)
                 else:
