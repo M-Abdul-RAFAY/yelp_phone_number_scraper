@@ -966,8 +966,11 @@ def scrape_business_info(driver, url, category, location):
         address = extract_address(driver)
         # Smart address handling - append location only if the exact location string isn't already there
         if address != "N/A":
+            # Check if the word "serving" is in the address
+            if "serving" in address.lower():
+                address = f"{address} {location}"
             # Check if the exact user location is already at the end of the address
-            if not address.lower().endswith(location.lower()):
+            elif not address.lower().endswith(location.lower()):
                 address = f"{address}"
         else:
             address = location
