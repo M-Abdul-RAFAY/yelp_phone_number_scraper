@@ -424,9 +424,14 @@ def extract_review_count(driver):
 def extract_address(driver):
     """Extract business address with enhanced selectors and promotional content filtering"""
     try:
-        # Enhanced address selectors - more comprehensive approach targeting specific Yelp structure
+        # Enhanced address selectors - targeting the specific Yelp address structure
         address_selectors = [
-            # Target the specific Location & Hours section structure you showed
+            # Target the specific address structure from the HTML you provided
+            "address p span.raw__09f24__T4Ezm",  # Street address and city/state parts
+            "address p[data-font-weight='semibold'] span.raw__09f24__T4Ezm",  # Street address part
+            "address p[data-font-weight='bold'] span.raw__09f24__T4Ezm",    # City/state/zip part
+            
+            # Target the Location & Hours section structure you showed
             "section[aria-label*='Location'] p[data-font-weight='bold']",
             "section.y-css-15jz5c7 p[data-font-weight='bold']",
             "section[aria-label*='Location & Hours'] p[data-font-weight='bold']",
@@ -441,6 +446,8 @@ def extract_address(driver):
             "address p",
             "p.y-css-qn4gww[data-font-weight='normal']",
             "p.y-css-160a82h[data-font-weight='bold']",  # From your HTML structure
+            "p.y-css-dx7fqt[data-font-weight='semibold']",  # Street address class
+            "p.y-css-69058c[data-font-weight='bold']",     # City/state class
             "*[class*='address'] p",
             "*[class*='location'] p",
             
@@ -467,8 +474,36 @@ def extract_address(driver):
             'serving', 'service area', 'coverage area', 'areas served', 'delivery area'
         ]
         
-        print("    🔍 Trying enhanced address extraction with promotional filtering...")
+        print("    🔍 Trying enhanced address extraction with complete street address support...")
         
+        # First, try to extract complete address from the address tag structure
+        try:
+            address_elements = driver.find_elements(By.CSS_SELECTOR, "address p span.raw__09f24__T4Ezm")
+            if len(address_elements) >= 2:
+                street_address = address_elements[0].text.strip()
+                city_state_zip = address_elements[1].text.strip()
+                if street_address and city_state_zip:
+                    complete_address = f"{street_address}, {city_state_zip}"
+                    print(f"    ✅ Found complete address from address tag: {complete_address}")
+                    return complete_address
+        except Exception as e:
+            print(f"    ⚠️ Address tag extraction failed: {str(e)[:30]}")
+        
+        # Try alternative approach for complete address
+        try:
+            street_elem = driver.find_element(By.CSS_SELECTOR, "p.y-css-dx7fqt[data-font-weight='semibold'] span.raw__09f24__T4Ezm")
+            city_elem = driver.find_element(By.CSS_SELECTOR, "p.y-css-69058c[data-font-weight='bold'] span.raw__09f24__T4Ezm")
+            if street_elem and city_elem:
+                street_address = street_elem.text.strip()
+                city_state_zip = city_elem.text.strip()
+                if street_address and city_state_zip:
+                    complete_address = f"{street_address}, {city_state_zip}"
+                    print(f"    ✅ Found complete address from specific classes: {complete_address}")
+                    return complete_address
+        except Exception as e:
+            print(f"    ⚠️ Specific class extraction failed: {str(e)[:30]}")
+        
+        # Fallback to original selectors
         for selector in address_selectors:
             try:
                 address_elements = driver.find_elements(By.CSS_SELECTOR, selector)
@@ -518,6 +553,7 @@ def extract_address(driver):
             
             # Look for common address patterns in the HTML
             address_patterns = [
+                r'<span class=" raw__09f24__T4Ezm">([^<]+)</span>[^<]*</p>[^<]*<p[^>]*data-font-weight="bold"[^>]*><span class=" raw__09f24__T4Ezm">([^<]+)</span>',
                 r'data-testid="address"[^>]*>([^<]+)<',
                 r'data-font-weight="bold"[^>]*>([^<]*(?:Serving|Service|Area|Street|Ave|Blvd|Rd|Dr)[^<]*)<',
                 r'class="[^"]*address[^"]*"[^>]*>([^<]+)<',
@@ -527,28 +563,41 @@ def extract_address(driver):
             ]
             
             for pattern in address_patterns:
-                matches = re.findall(pattern, page_source, re.IGNORECASE)
+                matches = re.findall(pattern, page_source, re.IGNORECASE | re.DOTALL)
                 for match in matches:
-                    clean_match = re.sub(r'<[^>]*>', '', match).strip()
-                    
-                    # Filter out promotional content
-                    is_promotional = any(keyword.lower() in clean_match.lower() for keyword in exclude_keywords)
-                    if is_promotional:
-                        continue
-                    
-                    # Check for service area or street address
-                    is_service_area = any(keyword.lower() in clean_match.lower() for keyword in service_area_keywords)
-                    
-                    if len(clean_match) > 10:
-                        if is_service_area:
-                            print(f"    ✅ Found service area in page source: {clean_match[:50]}...")
-                            return clean_match
-                        elif any(char.isdigit() for char in clean_match):
-                            has_street = any(street in clean_match.lower() for street in 
-                                ['st ', 'ave ', 'blvd', 'rd ', 'dr ', 'street', 'avenue', 'boulevard', 'road', 'drive'])
-                            if has_street:
-                                print(f"    ✅ Found valid address in page source: {clean_match[:50]}...")
+                    if isinstance(match, tuple) and len(match) == 2:
+                        # This is for the complete address pattern (street + city/state)
+                        street_part = re.sub(r'<[^>]*>', '', match[0]).strip()
+                        city_part = re.sub(r'<[^>]*>', '', match[1]).strip()
+                        complete_address = f"{street_part}, {city_part}"
+                        
+                        # Filter out promotional content
+                        is_promotional = any(keyword.lower() in complete_address.lower() for keyword in exclude_keywords)
+                        if not is_promotional and len(complete_address) > 10:
+                            print(f"    ✅ Found complete address in page source: {complete_address}")
+                            return complete_address
+                    else:
+                        # Single match
+                        clean_match = re.sub(r'<[^>]*>', '', str(match)).strip()
+                        
+                        # Filter out promotional content
+                        is_promotional = any(keyword.lower() in clean_match.lower() for keyword in exclude_keywords)
+                        if is_promotional:
+                            continue
+                        
+                        # Check for service area or street address
+                        is_service_area = any(keyword.lower() in clean_match.lower() for keyword in service_area_keywords)
+                        
+                        if len(clean_match) > 10:
+                            if is_service_area:
+                                print(f"    ✅ Found service area in page source: {clean_match[:50]}...")
                                 return clean_match
+                            elif any(char.isdigit() for char in clean_match):
+                                has_street = any(street in clean_match.lower() for street in 
+                                    ['st ', 'ave ', 'blvd', 'rd ', 'dr ', 'street', 'avenue', 'boulevard', 'road', 'drive'])
+                                if has_street:
+                                    print(f"    ✅ Found valid address in page source: {clean_match[:50]}...")
+                                    return clean_match
         except Exception as e:
             print(f"    ⚠️ Page source extraction failed: {str(e)[:30]}")
         
@@ -644,7 +693,8 @@ def extract_website(driver):
         exclude_domains = [
             'yelp.com', 'facebook.com', 'instagram.com', 'twitter.com', 'linkedin.com',
             'maps.google.com', 'foursquare.com', 'yelp-ir.com', 'support.yelp.com',
-            'biz.yelp.com', 'blog.yelp.com', 'engineeringblog.yelp.com', 'yelp-support.com'
+            'biz.yelp.com', 'blog.yelp.com', 'engineeringblog.yelp.com', 'yelp-support.com',
+            'onetrust.com', 'cookielaw.org', 'privacy.com', 'terms.com'
         ]
         
         for selector in website_selectors:
@@ -653,9 +703,10 @@ def extract_website(driver):
                 for website_element in website_elements:
                     website_url = website_element.get_attribute('href')
                     if website_url:
-                        # Check for Yelp support URLs and filter them out
-                        if 'yelp-support.com' in website_url.lower():
-                            print(f"    ⚠️ Skipping Yelp support URL: {website_url}")
+                        # Check for Yelp support URLs and other non-business URLs
+                        non_business_domains = ['yelp-support.com', 'onetrust.com', 'cookielaw.org', 'privacy.com', 'terms.com']
+                        if any(domain in website_url.lower() for domain in non_business_domains):
+                            print(f"    ⚠️ Skipping non-business URL: {website_url}")
                             continue
                         
                         # Handle biz_redir URLs - extract the actual website URL
