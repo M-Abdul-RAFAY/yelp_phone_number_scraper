@@ -422,26 +422,105 @@ def extract_review_count(driver):
         return "N/A"
 
 def extract_address(driver):
-    """Extract business address"""
+    """Extract business address with enhanced selectors"""
     try:
+        # Enhanced address selectors - more comprehensive approach
         address_selectors = [
+            # Modern Yelp address selectors
             "p[data-testid='address']",
-            "address p",
             "div[data-testid='business-location'] p",
-            "p.y-css-qn4gww[data-font-weight='normal']"
+            "section[aria-label*='Location and Contact'] p",
+            "section.y-css-1790tv2 p",
+            
+            # Alternative address patterns
+            "address p",
+            "p.y-css-qn4gww[data-font-weight='normal']",
+            "*[class*='address'] p",
+            "*[class*='location'] p",
+            
+            # Look for specific address containers
+            "div[class*='businessInfoCard'] p",
+            "div[class*='mapbox'] p",
+            "div[class*='contact'] p",
+            
+            # Fallback selectors
+            "section p", "aside p", "div p"
         ]
+        
+        print("    🔍 Trying enhanced address extraction...")
         
         for selector in address_selectors:
             try:
-                address_element = driver.find_element(By.CSS_SELECTOR, selector)
-                address_text = address_element.text.strip()
-                if address_text and len(address_text) > 5:  # Basic validation
-                    return address_text
-            except:
+                address_elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                for address_element in address_elements:
+                    address_text = address_element.text.strip()
+                    if address_text and len(address_text) > 5:
+                        # Validate this looks like a real address (contains numbers and street indicators)
+                        has_number = any(char.isdigit() for char in address_text)
+                        has_street_indicator = any(indicator in address_text.lower() for indicator in 
+                            ['st', 'ave', 'avenue', 'blvd', 'boulevard', 'rd', 'road', 'dr', 'drive', 
+                             'ln', 'lane', 'ct', 'court', 'pl', 'place', 'way', 'circle', 'square'])
+                        
+                        # Also accept if it has multiple parts (likely an address)
+                        has_multiple_parts = ',' in address_text and len(address_text.split(',')) >= 2
+                        
+                        if (has_number and has_street_indicator) or has_multiple_parts:
+                            print(f"    ✅ Found address using selector: {selector}")
+                            return address_text
+            except Exception as e:
+                print(f"    ⚠️ Selector {selector} failed: {str(e)[:30]}")
                 continue
+        
+        # Alternative approach: Look for address patterns in page source
+        print("    🔍 Trying page source address extraction...")
+        try:
+            page_source = driver.page_source
+            
+            # Look for common address patterns in the HTML
+            address_patterns = [
+                r'data-testid="address"[^>]*>([^<]+)<',
+                r'class="[^"]*address[^"]*"[^>]*>([^<]+)<',
+                r'aria-label="[^"]*address[^"]*"[^>]*>([^<]+)<',
+                r'>(\d+\s+[^<]*(?:St|Ave|Blvd|Rd|Dr|Ln|Court|Place|Way)[^<]*)<',
+                r'>(\d+\s+[^<]*(?:Street|Avenue|Boulevard|Road|Drive|Lane)[^<]*)<'
+            ]
+            
+            for pattern in address_patterns:
+                matches = re.findall(pattern, page_source, re.IGNORECASE)
+                for match in matches:
+                    clean_match = re.sub(r'<[^>]*>', '', match).strip()
+                    if len(clean_match) > 10 and any(char.isdigit() for char in clean_match):
+                        print(f"    ✅ Found address in page source: {clean_match[:50]}...")
+                        return clean_match
+        except Exception as e:
+            print(f"    ⚠️ Page source extraction failed: {str(e)[:30]}")
+        
+        # Last resort: Look for ANY text that looks like an address
+        print("    🔍 Trying fallback address detection...")
+        try:
+            all_paragraphs = driver.find_elements(By.TAG_NAME, "p")
+            for p in all_paragraphs:
+                text = p.text.strip()
+                if text and len(text) > 10:
+                    # Check if it looks like an address
+                    has_number = any(char.isdigit() for char in text)
+                    has_street_words = any(word in text.lower() for word in 
+                        ['street', 'avenue', 'boulevard', 'road', 'drive', 'lane', 'st', 'ave', 'blvd', 'rd', 'dr', 'ln'])
+                    has_comma = ',' in text
+                    
+                    if has_number and (has_street_words or has_comma) and len(text.split()) >= 3:
+                        # Make sure it's not just a phone number or other irrelevant text
+                        if not text.replace('(', '').replace(')', '').replace('-', '').replace(' ', '').isdigit():
+                            print(f"    ✅ Found address using fallback: {text[:50]}...")
+                            return text
+        except Exception as e:
+            print(f"    ⚠️ Fallback detection failed: {str(e)[:30]}")
+        
+        print("    ❌ No address found with any method")
         return "N/A"
+        
     except Exception as e:
-        print(f"Error extracting address: {e}")
+        print(f"    ❌ Error extracting address: {e}")
         return "N/A"
 
 def extract_phone_number(driver):
@@ -693,126 +772,9 @@ def extract_business_hours(driver):
         print(f"Error extracting business hours: {e}")
         return "N/A"
 
-def extract_categories(driver):
-    """Extract business categories"""
-    try:
-        category_selectors = [
-            # Modern Yelp category selectors
-            "span.y-css-qn4gww a[href*='/c/']",
-            "a[href*='/categories/']",
-            "div[data-testid='categories'] a",
-            # Alternative selectors
-            "span[class*='category'] a",
-            "*[class*='categories'] a",
-            "a[href*='/c/'][class*='category']",
-            # Broader category link patterns
-            "a[href*='/biz/'][href*='/c/']",
-            "a[href*='cflt=']",
-            # Look for category text patterns
-            "span[data-font-weight] a[href*='/c/']",
-            ".y-css-qn4gww a[href*='/c/']"
-        ]
-        
-        categories = []
-        
-        # Try different selectors
-        for selector in category_selectors:
-            try:
-                category_elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                for element in category_elements:
-                    category_text = element.text.strip()
-                    if category_text and len(category_text) > 1 and category_text not in categories:
-                        # Clean up category text
-                        cleaned_category = re.sub(r'[^\w\s&-]', '', category_text).strip()
-                        if cleaned_category and cleaned_category.lower() not in ['more', 'see all', 'show more']:
-                            categories.append(cleaned_category)
-            except:
-                continue
-        
-        # Alternative approach: look for category patterns in spans/divs
-        if not categories:
-            try:
-                # Look for spans that might contain categories
-                category_span_selectors = [
-                    "span[class*='category']",
-                    "div[class*='category']",
-                    "span.y-css-qn4gww",
-                    "*[data-testid*='category']"
-                ]
-                
-                for selector in category_span_selectors:
-                    try:
-                        elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                        for element in elements:
-                            # Check if element or its parent has category-like links
-                            try:
-                                parent = element.find_element(By.XPATH, "..")
-                                links = parent.find_elements(By.CSS_SELECTOR, "a[href*='/c/']")
-                                for link in links:
-                                    cat_text = link.text.strip()
-                                    if cat_text and cat_text not in categories:
-                                        categories.append(cat_text)
-                            except:
-                                pass
-                    except:
-                        continue
-            except:
-                pass
-        
-        # Last resort: search page source for category patterns
-        if not categories:
-            try:
-                page_source = driver.page_source
-                # Look for category patterns in the HTML
-                category_patterns = [
-                    r'"category"[^>]*>([^<]+)<',
-                    r'href="[^"]*\/c\/[^"]*"[^>]*>([^<]+)<',
-                    r'data-testid="[^"]*category[^"]*"[^>]*>([^<]+)<'
-                ]
-                
-                for pattern in category_patterns:
-                    matches = re.findall(pattern, page_source, re.IGNORECASE)
-                    for match in matches:
-                        cleaned_match = re.sub(r'[^\w\s&-]', '', match).strip()
-                        if cleaned_match and len(cleaned_match) > 2 and cleaned_match not in categories:
-                            categories.append(cleaned_match)
-            except:
-                pass
-        
-        # Remove duplicates while preserving order
-        unique_categories = []
-        for cat in categories:
-            if cat not in unique_categories:
-                unique_categories.append(cat)
-        
-        return ", ".join(unique_categories) if unique_categories else "N/A"
-    except Exception as e:
-        print(f"Error extracting categories: {e}")
-        return "N/A"
 
-def extract_price_range(driver):
-    """Extract price range ($ symbols)"""
-    try:
-        price_selectors = [
-            "span.y-css-qn4gww[aria-label*='price range']",
-            "span[data-testid='price-range']",
-            "span.price-range"
-        ]
-        
-        for selector in price_selectors:
-            try:
-                price_element = driver.find_element(By.CSS_SELECTOR, selector)
-                price_text = price_element.get_attribute('aria-label') or price_element.text
-                if price_text and '$' in price_text:
-                    return price_text.strip()
-            except:
-                continue
-        return "N/A"
-    except Exception as e:
-        print(f"Error extracting price range: {e}")
-        return "N/A"
 
-def scrape_business_info(driver, url):
+def scrape_business_info(driver, url, category, location):
     """Main function to scrape all business information (assumes session is established)"""
     try:
         print(f"\n🎯 Scraping: {url}")
@@ -875,6 +837,13 @@ def scrape_business_info(driver, url):
         # Extract all information with progress indication and random delays
         print("  📍 Extracting address...")
         address = extract_address(driver)
+        # Smart address handling - append location only if the exact location string isn't already there
+        if address != "N/A":
+            # Check if the exact user location is already at the end of the address
+            if not address.lower().endswith(location.lower()):
+                address = f"{address}, {location}"
+        else:
+            address = location
         time.sleep(random.uniform(0.2, 0.5))
         
         print("  ⭐ Extracting rating...")
@@ -893,14 +862,6 @@ def scrape_business_info(driver, url):
         website = extract_website(driver)
         time.sleep(random.uniform(0.2, 0.5))
         
-        print("  🏷️ Extracting categories...")
-        categories = extract_categories(driver)
-        time.sleep(random.uniform(0.2, 0.5))
-        
-        print("  💲 Extracting price range...")
-        price_range = extract_price_range(driver)
-        time.sleep(random.uniform(0.2, 0.5))
-        
         print("  🕒 Extracting business hours...")
         business_hours = extract_business_hours(driver)
         
@@ -917,8 +878,7 @@ def scrape_business_info(driver, url):
             'address': address,
             'phone': phone,
             'website': website,
-            'categories': categories,
-            'price_range': price_range,
+            'categories': category,  # Use user input category
             'business_hours': business_hours,
             'yelp_url': url
         }
@@ -930,7 +890,7 @@ def scrape_business_info(driver, url):
         print(f"✅ Phone: {business_info['phone']}")
         print(f"✅ Website: {business_info['website']}")
         print(f"✅ Address: {business_info['address']}")
-        print(f"✅ Categories: {business_info['categories']}")
+        print(f"✅ Category: {business_info['categories']}")
         print(f"✅ Hours: {business_info['business_hours'][:50]}..." if len(business_info['business_hours']) > 50 else f"✅ Hours: {business_info['business_hours']}")
         
         return business_info
@@ -941,11 +901,10 @@ def scrape_business_info(driver, url):
             'business_name': 'N/A',
             'rating': 'N/A',
             'review_count': 'N/A',
-            'address': 'N/A',
+            'address': location,  # Use location as fallback
             'phone': 'N/A',
             'website': 'N/A',
-            'categories': 'N/A',
-            'price_range': 'N/A',
+            'categories': category,  # Use user input category
             'business_hours': 'N/A',
             'yelp_url': url
         }
@@ -1005,7 +964,7 @@ def main():
         # Create CSV file and write header
         fieldnames = [
             'business_name', 'rating', 'review_count', 'address', 
-            'phone', 'website', 'categories', 'price_range', 
+            'phone', 'website', 'categories', 
             'business_hours', 'yelp_url'
         ]
         
@@ -1016,7 +975,7 @@ def main():
             # Scrape each business with enhanced stealth
             for i, url in enumerate(business_urls, 1):
                 print(f"\n[{i}/{len(business_urls)}] Processing business...")
-                business_info = scrape_business_info(driver, url)
+                business_info = scrape_business_info(driver, url, category, location)
                 writer.writerow(business_info)
                 
                 # Extended random delay between requests for stealth
