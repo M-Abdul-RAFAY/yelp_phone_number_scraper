@@ -968,7 +968,7 @@ def scrape_business_info(driver, url, category, location):
         if address != "N/A":
             # Check if the exact user location is already at the end of the address
             if not address.lower().endswith(location.lower()):
-                address = f"{address}, {location}"
+                address = f"{address}"
         else:
             address = location
         time.sleep(random.uniform(0.2, 0.5))
