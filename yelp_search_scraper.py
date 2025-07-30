@@ -422,10 +422,15 @@ def extract_review_count(driver):
         return "N/A"
 
 def extract_address(driver):
-    """Extract business address with enhanced selectors"""
+    """Extract business address with enhanced selectors and promotional content filtering"""
     try:
-        # Enhanced address selectors - more comprehensive approach
+        # Enhanced address selectors - more comprehensive approach targeting specific Yelp structure
         address_selectors = [
+            # Target the specific Location & Hours section structure you showed
+            "section[aria-label*='Location'] p[data-font-weight='bold']",
+            "section.y-css-15jz5c7 p[data-font-weight='bold']",
+            "section[aria-label*='Location & Hours'] p[data-font-weight='bold']",
+            
             # Modern Yelp address selectors
             "p[data-testid='address']",
             "div[data-testid='business-location'] p",
@@ -435,6 +440,7 @@ def extract_address(driver):
             # Alternative address patterns
             "address p",
             "p.y-css-qn4gww[data-font-weight='normal']",
+            "p.y-css-160a82h[data-font-weight='bold']",  # From your HTML structure
             "*[class*='address'] p",
             "*[class*='location'] p",
             
@@ -447,7 +453,21 @@ def extract_address(driver):
             "section p", "aside p", "div p"
         ]
         
-        print("    🔍 Trying enhanced address extraction...")
+        # Keywords to exclude (promotional/non-address content)
+        exclude_keywords = [
+            'recently requested', 'quote', 'pricing', 'availability', 'response time',
+            'response rate', 'locals', 'coverage', 'guaranteed', 'eligible', 'project',
+            'get pricing', 'learn more', 'minutes', 'what type', 'service', 'hire through',
+            'request a quote', 'get a quote', 'book now', 'contact for pricing',
+            'free consultation', 'call for details', 'schedule', 'appointment'
+        ]
+        
+        # Service area keywords (accept these as valid addresses for service businesses)
+        service_area_keywords = [
+            'serving', 'service area', 'coverage area', 'areas served', 'delivery area'
+        ]
+        
+        print("    🔍 Trying enhanced address extraction with promotional filtering...")
         
         for selector in address_selectors:
             try:
@@ -455,68 +475,118 @@ def extract_address(driver):
                 for address_element in address_elements:
                     address_text = address_element.text.strip()
                     if address_text and len(address_text) > 5:
+                        
+                        # First check if this contains promotional content
+                        is_promotional = any(keyword.lower() in address_text.lower() for keyword in exclude_keywords)
+                        if is_promotional:
+                            print(f"    ⚠️ Skipping promotional content: {address_text[:30]}...")
+                            continue
+                        
+                        # Check if this is a service area (acceptable for service businesses)
+                        is_service_area = any(keyword.lower() in address_text.lower() for keyword in service_area_keywords)
+                        
                         # Validate this looks like a real address (contains numbers and street indicators)
                         has_number = any(char.isdigit() for char in address_text)
                         has_street_indicator = any(indicator in address_text.lower() for indicator in 
-                            ['st', 'ave', 'avenue', 'blvd', 'boulevard', 'rd', 'road', 'dr', 'drive', 
-                             'ln', 'lane', 'ct', 'court', 'pl', 'place', 'way', 'circle', 'square'])
+                            ['st ', 'ave ', 'avenue', 'blvd', 'boulevard', 'rd ', 'road', 'dr ', 'drive', 
+                             'ln ', 'lane', 'ct ', 'court', 'pl ', 'place', 'way ', 'circle', 'square',
+                             'street', ' st,', ' ave,', ' rd,', ' dr,', ' ln,', ' ct,', ' pl,', ' way,'])
                         
                         # Also accept if it has multiple parts (likely an address)
                         has_multiple_parts = ',' in address_text and len(address_text.split(',')) >= 2
                         
-                        if (has_number and has_street_indicator) or has_multiple_parts:
-                            print(f"    ✅ Found address using selector: {selector}")
-                            return address_text
+                        # Check for proper address format (number + street name)
+                        address_pattern = re.match(r'^\d+\s+[A-Za-z]', address_text)
+                        
+                        # Accept service areas or proper addresses
+                        if is_service_area or (has_number and has_street_indicator) or address_pattern or \
+                           (has_multiple_parts and has_number and len(address_text.split()) >= 3):
+                            # Final check - make sure it's not just a phone number formatted as address
+                            digit_count = sum(1 for char in address_text if char.isdigit())
+                            if is_service_area or digit_count < 8 or not address_text.replace('(', '').replace(')', '').replace('-', '').replace(' ', '').replace(',', '').isdigit():
+                                print(f"    ✅ Found valid address using selector: {selector}")
+                                print(f"    📍 Address: {address_text}")
+                                return address_text
             except Exception as e:
                 print(f"    ⚠️ Selector {selector} failed: {str(e)[:30]}")
                 continue
         
         # Alternative approach: Look for address patterns in page source
-        print("    🔍 Trying page source address extraction...")
+        print("    🔍 Trying page source address extraction with filtering...")
         try:
             page_source = driver.page_source
             
             # Look for common address patterns in the HTML
             address_patterns = [
                 r'data-testid="address"[^>]*>([^<]+)<',
+                r'data-font-weight="bold"[^>]*>([^<]*(?:Serving|Service|Area|Street|Ave|Blvd|Rd|Dr)[^<]*)<',
                 r'class="[^"]*address[^"]*"[^>]*>([^<]+)<',
                 r'aria-label="[^"]*address[^"]*"[^>]*>([^<]+)<',
-                r'>(\d+\s+[^<]*(?:St|Ave|Blvd|Rd|Dr|Ln|Court|Place|Way)[^<]*)<',
-                r'>(\d+\s+[^<]*(?:Street|Avenue|Boulevard|Road|Drive|Lane)[^<]*)<'
+                r'>(\d+\s+[^<]*(?:St|Ave|Blvd|Rd|Dr|Ln|Court|Place|Way|Street|Avenue|Boulevard|Road|Drive|Lane)[^<]*)<',
+                r'>(Serving [^<]*Area[^<]*)<'
             ]
             
             for pattern in address_patterns:
                 matches = re.findall(pattern, page_source, re.IGNORECASE)
                 for match in matches:
                     clean_match = re.sub(r'<[^>]*>', '', match).strip()
-                    if len(clean_match) > 10 and any(char.isdigit() for char in clean_match):
-                        print(f"    ✅ Found address in page source: {clean_match[:50]}...")
-                        return clean_match
+                    
+                    # Filter out promotional content
+                    is_promotional = any(keyword.lower() in clean_match.lower() for keyword in exclude_keywords)
+                    if is_promotional:
+                        continue
+                    
+                    # Check for service area or street address
+                    is_service_area = any(keyword.lower() in clean_match.lower() for keyword in service_area_keywords)
+                    
+                    if len(clean_match) > 10:
+                        if is_service_area:
+                            print(f"    ✅ Found service area in page source: {clean_match[:50]}...")
+                            return clean_match
+                        elif any(char.isdigit() for char in clean_match):
+                            has_street = any(street in clean_match.lower() for street in 
+                                ['st ', 'ave ', 'blvd', 'rd ', 'dr ', 'street', 'avenue', 'boulevard', 'road', 'drive'])
+                            if has_street:
+                                print(f"    ✅ Found valid address in page source: {clean_match[:50]}...")
+                                return clean_match
         except Exception as e:
             print(f"    ⚠️ Page source extraction failed: {str(e)[:30]}")
         
-        # Last resort: Look for ANY text that looks like an address
-        print("    🔍 Trying fallback address detection...")
+        # Last resort: Look for ANY text that looks like an address or service area
+        print("    🔍 Trying fallback address detection with filtering...")
         try:
             all_paragraphs = driver.find_elements(By.TAG_NAME, "p")
             for p in all_paragraphs:
                 text = p.text.strip()
                 if text and len(text) > 10:
+                    
+                    # Skip promotional content
+                    is_promotional = any(keyword.lower() in text.lower() for keyword in exclude_keywords)
+                    if is_promotional:
+                        continue
+                    
+                    # Check for service area
+                    is_service_area = any(keyword.lower() in text.lower() for keyword in service_area_keywords)
+                    if is_service_area:
+                        print(f"    ✅ Found service area using fallback: {text[:50]}...")
+                        return text
+                    
                     # Check if it looks like an address
                     has_number = any(char.isdigit() for char in text)
                     has_street_words = any(word in text.lower() for word in 
-                        ['street', 'avenue', 'boulevard', 'road', 'drive', 'lane', 'st', 'ave', 'blvd', 'rd', 'dr', 'ln'])
+                        ['street', 'avenue', 'boulevard', 'road', 'drive', 'lane', 'st ', 'ave ', 'blvd', 'rd ', 'dr ', 'ln '])
                     has_comma = ',' in text
                     
                     if has_number and (has_street_words or has_comma) and len(text.split()) >= 3:
                         # Make sure it's not just a phone number or other irrelevant text
-                        if not text.replace('(', '').replace(')', '').replace('-', '').replace(' ', '').isdigit():
+                        digit_count = sum(1 for char in text if char.isdigit())
+                        if digit_count < 8 or not text.replace('(', '').replace(')', '').replace('-', '').replace(' ', '').replace(',', '').isdigit():
                             print(f"    ✅ Found address using fallback: {text[:50]}...")
                             return text
         except Exception as e:
             print(f"    ⚠️ Fallback detection failed: {str(e)[:30]}")
         
-        print("    ❌ No address found with any method")
+        print("    ❌ No valid address found with any method")
         return "N/A"
         
     except Exception as e:
@@ -574,7 +644,7 @@ def extract_website(driver):
         exclude_domains = [
             'yelp.com', 'facebook.com', 'instagram.com', 'twitter.com', 'linkedin.com',
             'maps.google.com', 'foursquare.com', 'yelp-ir.com', 'support.yelp.com',
-            'biz.yelp.com', 'blog.yelp.com', 'engineeringblog.yelp.com'
+            'biz.yelp.com', 'blog.yelp.com', 'engineeringblog.yelp.com', 'yelp-support.com'
         ]
         
         for selector in website_selectors:
@@ -583,6 +653,11 @@ def extract_website(driver):
                 for website_element in website_elements:
                     website_url = website_element.get_attribute('href')
                     if website_url:
+                        # Check for Yelp support URLs and filter them out
+                        if 'yelp-support.com' in website_url.lower():
+                            print(f"    ⚠️ Skipping Yelp support URL: {website_url}")
+                            continue
+                        
                         # Handle biz_redir URLs - extract the actual website URL
                         if 'biz_redir' in website_url:
                             try:
@@ -630,6 +705,7 @@ def extract_website(driver):
                                 if any(tld in website_url for tld in ['.com', '.org', '.net', '.co', '.io', '.biz']):
                                     return website_url
             except:
+                continue
                 continue
         
         # Alternative approach: look for website text patterns
