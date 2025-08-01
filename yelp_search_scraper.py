@@ -66,10 +66,61 @@ def get_driver():
     selected_size = random.choice(window_sizes)
     chrome_options.add_argument(f"--window-size={selected_size}")
     
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=chrome_options
-    )
+    try:
+        # Method 1: Try without service first (most reliable on Windows)
+        print("🔧 Method 1: Using system ChromeDriver...")
+        driver = webdriver.Chrome(options=chrome_options)
+        print("✅ Method 1 successful!")
+        
+    except Exception as e1:
+        print(f"⚠️ Method 1 failed: {str(e1)[:100]}...")
+        
+        try:
+            # Method 2: Try with webdriver-manager
+            print("🔧 Method 2: Using WebDriver Manager...")
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print("✅ Method 2 successful!")
+            
+        except Exception as e2:
+            print(f"⚠️ Method 2 failed: {str(e2)[:100]}...")
+            
+            try:
+                # Method 3: Clear cache and try fresh download
+                print("🔧 Method 3: Fresh ChromeDriver download...")
+                import os
+                import shutil
+                
+                # Clear webdriver-manager cache
+                cache_dirs = [
+                    os.path.expanduser("~/.wdm"),
+                    os.path.expanduser("~/AppData/Local/.wdm"),
+                    os.path.expanduser("~/AppData/Roaming/.wdm")
+                ]
+                
+                for cache_dir in cache_dirs:
+                    if os.path.exists(cache_dir):
+                        try:
+                            shutil.rmtree(cache_dir)
+                            print(f"🧹 Cleared cache: {cache_dir}")
+                        except:
+                            pass
+                
+                # Try with fresh download
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                print("✅ Method 3 successful!")
+                
+            except Exception as e3:
+                print(f"❌ All methods failed!")
+                print(f"Final error: {str(e3)}")
+                print("\n🔧 TROUBLESHOOTING STEPS:")
+                print("1. Update Google Chrome: chrome://settings/help")
+                print("2. Restart your computer")
+                print("3. Run: pip install --upgrade selenium webdriver-manager")
+                print("4. Try running as Administrator")
+                print("5. Check Windows Defender/Antivirus isn't blocking ChromeDriver")
+                raise e3
     
     # Enhanced stealth JavaScript execution
     stealth_js = """
